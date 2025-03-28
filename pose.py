@@ -11,7 +11,7 @@ class PoseEstimator:
         self.lowerLimitArmpit = 50
         self.upperLimitArmpit = 130
         self.lowerLimitElbow = 100
-        self.upperLimitElbow = 180
+        self.upperLimitElbow = 180     
 
         # Mediapipe setup
         self.mpPose = mp.solutions.pose

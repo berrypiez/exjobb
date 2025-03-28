@@ -6,6 +6,7 @@ from math import atan2
 import time
 import logging
 import sys
+import requests
 
 lower_limit_armpit = 50
 upper_limit_armpit = 130
@@ -183,23 +184,22 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5, sta
         gesture = get_gesture(left_armpit_angle, right_armpit_angle, left_elbow_angle, right_elbow_angle, 
                                    [left_shoulder[0], right_shoulder[0], left_wrist[0], right_wrist[0], left_elbow[0], right_elbow[0], left_hip[0], right_hip[0]],
                                      hand_open)
-
+        server_url = 'http://192.168.0.2:5000/command'
         if gesture:
             if gesture == "left":
                 print("Pointing left")
-                logging.info("Pointing left")
+                requests.post(server_url, json={'command': gesture})
             elif gesture == "right":
                 print("Pointing right")
-                logging.info("Pointing right")
+                requests.post(server_url, json={'command': gesture})
             elif gesture == "openhand":
                 print("Open hand")
-                logging.info("Open hand")
+                requests.post(server_url, json={'command': gesture})
             elif gesture == "closedhand":
                 print("Closed hand")
-                logging.info("Closed hand")
+                requests.post(server_url, json={'command': gesture})
         else:
             print("No gesture detected")
-            logging.info("NaN")
 
         cv2.imshow('Mediapipe Feed', image)
 

@@ -2,7 +2,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from math import atan2
-import pyrealsense2 as rs
+import pyrealsense2 as rs2
 import requests
 
 class PoseEstimator():
@@ -102,25 +102,25 @@ class PoseEstimator():
 
     def run(self):
         # ---- Using RealSense camera ----
-        # pipe = rs.pipeline()
-        # cfg = rs.config()
-        # cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        # pipe.start()
+        pipe = rs2.pipeline()
+        cfg = rs2.config()
+        cfg.enable_stream(rs2.stream.color, 960, 540, rs2.format.bgr8, 60)
+        pipe.start(cfg)
 
         # ---- Using regular webcam ----
-        cap = cv2.VideoCapture(0)
+        # cap = cv2.VideoCapture(0)
 
         with self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose, \
             self.mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
             while True:
-                ret, frame = cap.read()
+                #ret, frame = cap.read()
                 # ---- OR RealSense ----
-                # frames = pipe.wait_for_frames()
-                # color_frame = frames.get_color_frame()
-                # frame = np.asanyarray(color_frame.get_data())
+                frames = pipe.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                frame = np.asanyarray(color_frame.get_data())
 
-                if not ret:
-                    continue
+                # if not ret:
+                #     continue
                 image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 image.flags.writeable = False
                 pose_results = pose.process(image)
@@ -190,8 +190,8 @@ class PoseEstimator():
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
-        cap.release()
-        # pipe.stop()  
+        # cap.release()
+        pipe.stop()  
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":

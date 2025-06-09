@@ -1,2 +1,2 @@
-# Exjobb
-Repo för experimentell kod för exjobbet. Senare "riktig" kodlösning ska upp till annat repo.
+# Thesis
+Repository for experimentation. Final code will be pushed elsewhere to be integrated into RISE project.

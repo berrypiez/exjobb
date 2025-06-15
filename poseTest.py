@@ -102,22 +102,22 @@ class PoseEstimator():
 
     def run(self):
         # ---- Using RealSense camera ----
-        pipe = rs2.pipeline()
-        cfg = rs2.config()
-        cfg.enable_stream(rs2.stream.color, 960, 540, rs2.format.bgr8, 60)
-        pipe.start(cfg)
+        # pipe = rs2.pipeline()
+        # cfg = rs2.config()
+        # cfg.enable_stream(rs2.stream.color, 960, 540, rs2.format.bgr8, 60)
+        # pipe.start(cfg)
 
         # ---- Using regular webcam ----
-        # cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(0)
 
         with self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose, \
             self.mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
             while True:
-                #ret, frame = cap.read()
+                ret, frame = cap.read()
                 # ---- OR RealSense ----
-                frames = pipe.wait_for_frames()
-                color_frame = frames.get_color_frame()
-                frame = np.asanyarray(color_frame.get_data())
+                # frames = pipe.wait_for_frames()
+                # color_frame = frames.get_color_frame()
+                # frame = np.asanyarray(color_frame.get_data())
 
                 # if not ret:
                 #     continue
@@ -190,8 +190,8 @@ class PoseEstimator():
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
-        # cap.release()
-        pipe.stop()  
+        cap.release()
+        #pipe.stop()  
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":

@@ -3,8 +3,13 @@ import os
 import datetime
 from ultralytics import YOLO
 
+# Defining the directories for videos later
 OUTPUT_DIR = "live_output"
+
+# temporary directory to hold videos not yet labeled
 TEMP_DIR = os.path.join(OUTPUT_DIR, "temp")
+
+# directories for labeled output
 ENTER_DIR = os.path.join(OUTPUT_DIR, "enter")
 PASS_DIR = os.path.join(OUTPUT_DIR, "pass")
 
@@ -12,15 +17,19 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(ENTER_DIR, exist_ok=True)
 os.makedirs(PASS_DIR, exist_ok=True)
 
+# load yolo model, might look different with other setup
 yolo_model = YOLO("yolov8s.pt")
 
-DOOR_REGION = () # Define the door region (x1, y1, x2, y2)
+# Define the door region (x1, y1, x2, y2)
+DOOR_REGION = ()
 
+# setup the camera (manually check what number is associated with what camera, now '0')
 cap = cv2.VideoCapture(0)
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 frame_rate = int(cap.get(cv2.CAP_PROP_FPS))
 
+# tracked ids for if there are multiple people in frame
 tracked_ids = set()
 recordings = {}
 
@@ -31,23 +40,37 @@ while True:
     if not ret:
         break
 
+    # track class 0, i.e. humans with yolo
     results = yolo_model.track(frame, persist=True, classes=[0], tracker="bytetrack.yaml", verbose=False)
+
+    # save box that surrounds person
     boxes = results[0].boxes
 
+    # ids of people currently in frame
     current_ids = set()
 
+    # check if there are any
     if boxes.id is not None:
+
+        # iterate over each person
         for box, track_id in zip(boxes.xyxy.cpu().numpy(), boxes.id.cpu().numpy()):
+
+            # add current id to current ids, and define the center of the box
             track_id = int(track_id)
             x1, y1, x2, y2 = box
             center = ((x1 + x2) // 2, (y1 + y2) // 2)
             current_ids.add(track_id)
 
+            # if it is not already tracked then add it
             if track_id not in tracked_ids:
                 tracked_ids.add(track_id)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Temporary name before label set
                 video_name = f"{timestamp}_track_{track_id}.mp4"
                 video_path = os.path.join(TEMP_DIR, video_name)
+
+                # this is to create the video
                 writer = cv2.VideoWriter(
                     video_path,
                     cv2.VideoWriter_fourcc(*"mp4v"),
@@ -72,6 +95,7 @@ while True:
                 writer = recordings[finished_id]["writer"]
                 writer.release()
 
+                # Check where the last position was, and determine label from this
                 last_x, last_y = recordings[finished_id]["positions"][-1]
                 if (DOOR_REGION[0] <= last_x <= DOOR_REGION[2]) and (DOOR_REGION[1] <= last_y <= DOOR_REGION[3]):
                     label = "enter"
@@ -81,16 +105,18 @@ while True:
                     label = "pass"
                     out_dir = PASS_DIR
 
+                # rename based on label
                 new_name = recordings[finished_id]["video_name"].replace("track", label)
                 new_path = os.path.join(out_dir, new_name)
                 os.rename(recordings[finished_id]["video_path"], new_path)
 
                 print(f"Saved: {new_path} for track ID {finished_id}")
 
+                # remove id from storage when video is done and stored
                 del recordings[finished_id]
                 tracked_ids.remove(finished_id)
 
-        # Draw door
+        # Draw door for convenience
         cv2.rectangle(frame, (DOOR_REGION[0], DOOR_REGION[1]), (DOOR_REGION[2], DOOR_REGION[3]), (0, 255, 0), 2)
         cv2.imshow("Live Tracking", frame)
 

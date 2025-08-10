@@ -21,7 +21,7 @@ def test_chessboard(frame, pattern_size):
     cv2.destroyWindow('Chessboard detection')
 
 def main():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     if not cap.isOpened():
         print("Cannot open camera")
         return

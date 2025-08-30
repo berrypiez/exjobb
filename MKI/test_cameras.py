@@ -19,7 +19,7 @@ import cv2
 #         cv2.destroyAllWindows()
 #         break
 
-cap = cv2.VideoCapture(1)  # Adjust the camera index as needed
+cap = cv2.VideoCapture(0)  # Adjust the camera index as needed
 
 if not cap.isOpened():
     print("Error: Could not open camera.")

@@ -5,6 +5,10 @@ from ultralytics import YOLO
 import torch
 import math
 import numpy as np
+import time
+
+prev_time = time.time()
+actual_fps = 0
 
 def distance_to_door(x, y, door_region):
     door_center_x = (door_region[0] + door_region[2]) // 2
@@ -29,7 +33,10 @@ os.makedirs(PASS_DIR, exist_ok=True)
 
 yolo_model = YOLO("yolo11s.pt")
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
+cv2.namedWindow('Live Tracking (Undistorted)', cv2.WINDOW_NORMAL)
+cv2.setWindowProperty('Live Tracking (Undistorted)', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
 
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -41,7 +48,7 @@ mtx = np.array([[307.8047385, 0, 355.19676862],
 dist = np.array([-0.290496, 0.07539763, -0.00075077, -0.00159761, -0.00811828])
 
 door_center = (int(frame_width * 0.55), frame_height)
-ellipse_axes = (140, 140)
+ellipse_axes = (280, 140)
 DOOR_REGION = (
     int(frame_width * 0.4),
     int(frame_height - ellipse_axes[1] * 2),
@@ -150,8 +157,16 @@ while True:
         cv2.circle(frame, (vx, vy), 5, (0, 0, 255), -1)
 
     cv2.ellipse(frame, door_center, ellipse_axes, 0, 180, 360, (255, 0, 0), 2)
+    
+    # --- FPS ---
+    current_time = time.time()
+    actual_fps = 1 / (current_time - prev_time)
+    prev_time = current_time
+    cv2.putText(frame, f"FPS: {actual_fps:.1f}", (10, 30),
+		    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    display_frame = cv2.resize(frame, (1280, 720))
+
+    display_frame = cv2.resize(frame, (1920, 1200))
     cv2.imshow("Live Tracking (Undistorted)", display_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):

@@ -1,7 +1,7 @@
 import cv2
 import time
 
-def measure_camera_fps(camera_index=1, measure_duration=5):
+def measure_camera_fps(camera_index=0, measure_duration=5):
     cap = cv2.VideoCapture(camera_index)
 
     if not cap.isOpened():

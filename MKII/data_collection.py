@@ -90,6 +90,11 @@ class LiveTracker:
         self.recordings = {}
         self.vanish_counter = {}
         self.vanish_points = []
+        
+        # --- FPS tracking ---
+        self.fps = int(self.cap.get(cv2.CAP_PROP_FPS)) or 25  # fallback FPS
+        self._prev_fps_time = time.time()
+        self.frame_count_for_fps = 0
 
 
     def is_inside_ellipse(self, x, y):
@@ -175,12 +180,14 @@ class LiveTracker:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             # --- FPS ---
-            frame_count_for_fps += 1
-            if time.time() - prev_time >= 1:
-                fps = frame_count_for_fps
-                frame_count_for_fps = 0
-                prev_time = time.time()
-            cv2.putText(frame, f"FPS: {fps}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            self.frame_count_for_fps += 1
+            now = time.time()
+            if now - self._prev_fps_time >= 1.0:
+                self.fps = self.frame_count_for_fps
+                self.frame_count_for_fps = 0
+                self._prev_fps_time = now
+
+            cv2.putText(frame, f"FPS: {self.fps}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
             if self.fullscreen:
                 display_frame = frame
@@ -204,7 +211,7 @@ class LiveTracker:
         writer = cv2.VideoWriter(
             video_path,
             cv2.VideoWriter_fourcc(*"mp4v"),
-            self.frame_rate,
+            float(self.fps),
             (self.clean_width, self.clean_height)
         )
 
@@ -282,12 +289,12 @@ def main():
     tracker = LiveTracker(
         yolo_model="yolo11s.pt",
         ellipse_axes=(280, 140),
-        vanish_threshold=120,
+        vanish_threshold=90,
         extra_seconds=2,
         camera_index=0,
         computer="Jetson",
         distort=False,
-        fullscreen=True,
+        fullscreen=False,
         debug=True
     )
     tracker.run()

@@ -2,6 +2,8 @@ import numpy as np
 from typing import List, Tuple, Optional
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_squared_error
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.linear_model import LinearRegression
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import (
     LSTM, Dense, Input, TimeDistributed,
@@ -158,7 +160,7 @@ class Models:
         self,
         seqs: List[np.ndarray],
         n_states: int = 4,
-        use_pca: int = 6,
+        use_pca: int = 4,
         max_iter: int = 100
     ):
         """Train a GaussianHMM using PCA-reduced features."""
@@ -166,7 +168,7 @@ class Models:
         pca = PCA(n_components=min(use_pca, all_frames.shape[1]))
         reduced = pca.fit_transform(all_frames)
         lengths = [s.shape[0] for s in seqs]
-        model = GaussianHMM(n_components=n_states, covariance_type="full", n_iter=max_iter)
+        model = GaussianHMM(n_components=n_states, covariance_type="full", n_iter=max_iter, min_covar=1e-6)
         model.fit(reduced, lengths)
         self.hmm_model = model
         self.hmm_pca = pca
@@ -193,3 +195,56 @@ class Models:
         preds = np.array(preds)
         preds_full = pca.inverse_transform(preds)
         return preds_full
+    
+    # -------------------
+    # KNN for Trajectory Prediction
+    # -------------------
+    def train_knn(self, X_train, y_train, n_neighbors=5):
+        # Flatten sequences
+        N, T_p, F = X_train.shape
+        _, T_f, _ = y_train.shape
+        self.knn_Tf = T_f
+        self.knn_F = F
+
+        X_flat = X_train.reshape(N, T_p * F)
+        y_flat = y_train.reshape(N, T_f * F)
+
+        model = KNeighborsRegressor(n_neighbors=n_neighbors, weights='distance')
+        model.fit(X_flat, y_flat)
+        self.knn_model = model
+        return model
+
+    def predict_knn(self, X):
+        if not hasattr(self, "knn_model"):
+            raise RuntimeError("KNN model not trained yet.")
+        N, T_p, F = X.shape
+        X_flat = X.reshape(N, T_p * F)
+        preds_flat = self.knn_model.predict(X_flat)
+        preds = preds_flat.reshape(N, self.knn_Tf, self.knn_F)
+        return preds
+    
+    # -------------------
+    # Linear Regression for Trajectories
+    # -------------------
+    def train_linear(self, X_train, y_train):
+        N, T_p, F = X_train.shape
+        _, T_f, _ = y_train.shape
+        self.lin_Tf = T_f
+        self.lin_F = F
+
+        X_flat = X_train.reshape(N, T_p * F)
+        y_flat = y_train.reshape(N, T_f * F)
+
+        model = LinearRegression()
+        model.fit(X_flat, y_flat)
+        self.lin_model = model
+        return model
+
+    def predict_linear(self, X):
+        if not hasattr(self, "lin_model"):
+            raise RuntimeError("Linear model not trained yet.")
+        N, T_p, F = X.shape
+        X_flat = X.reshape(N, T_p * F)
+        preds_flat = self.lin_model.predict(X_flat)
+        preds = preds_flat.reshape(N, self.lin_Tf, self.lin_F)
+        return preds

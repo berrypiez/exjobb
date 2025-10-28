@@ -204,4 +204,3 @@ finally:
             # cleanup
             del recordings[track_id]
             tracked_ids.remove(track_id)
-            

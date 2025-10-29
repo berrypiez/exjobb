@@ -35,6 +35,7 @@ class DataSetup:
                         continue
 
                     videos, jsons = {}, {}
+
                     for f in os.listdir(label_path):
                         full_path = os.path.join(label_path, f)
                         key = os.path.splitext(f)[0]
@@ -55,6 +56,8 @@ class DataSetup:
 
 
 class DataProcessing:
+
+    REDUCED_LANDMARKS = [0, 11, 12, 23, 24, 25, 26, 27, 28] # nose, shoulders, hips, knees, ankles
 
     def __init__(self, n_landmarks: int = 33):
         self.n_landmarks = n_landmarks
@@ -112,20 +115,39 @@ class DataProcessing:
 
 
     def run_mediapipe(self, video_path: str, frames: List[dict]) -> List[dict]:
+        """
+        Run Mediapipe pose on the video, cropping each frame to bbox, and store
+        pose landmarks in image coordinates in each frame dict under 'pose_landmarks'.
+        Also attach 'frame_size' (width, height) onto the top-level data in skeleton().
+        """
         cap = cv2.VideoCapture(video_path)
         pose = self.mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5, model_complexity=1)
         out_frames = []
 
-        for i,f_info in enumerate(frames):
+        # We will read frames in sync with frames list — if the video has different
+        # number of frames the original code handled that, keep same behavior.
+        frame_idx = 0
+        frame_w = None
+        frame_h = None
+
+        while True:
             ret, frame = cap.read()
             if not ret:
-                f_info['pose_landmarks'] = None
-                out_frames.append(f_info)
-                continue
+                break
+            # store frame size once
+            if frame_w is None or frame_h is None:
+                frame_h, frame_w = frame.shape[:2]
+
+            # If frames list shorter than video, we still should process until frames length
+            if frame_idx >= len(frames):
+                break
+
+            f_info = frames[frame_idx].copy()
             bbox = f_info.get('bbox')
             if bbox is None:
                 f_info['pose_landmarks'] = None
                 out_frames.append(f_info)
+                frame_idx += 1
                 continue
 
             x_min, y_min, x_max, y_max = bbox
@@ -139,12 +161,14 @@ class DataProcessing:
             if x_max <= x_min or y_max <= y_min:
                 f_info['pose_landmarks'] = None
                 out_frames.append(f_info)
+                frame_idx += 1
                 continue
 
             crop = frame[y_min:y_max, x_min:x_max]
             if crop.size == 0:
                 f_info['pose_landmarks'] = None
                 out_frames.append(f_info)
+                frame_idx += 1
                 continue
 
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
@@ -152,6 +176,7 @@ class DataProcessing:
             if res.pose_landmarks:
                 landmarks = []
                 for lm in res.pose_landmarks.landmark:
+                    # convert landmark back to original image coordinates
                     x = lm.x * (x_max - x_min) + x_min
                     y = lm.y * (y_max - y_min) + y_min
                     z = lm.z
@@ -161,70 +186,73 @@ class DataProcessing:
             else:
                 f_info['pose_landmarks'] = None
             out_frames.append(f_info)
+            frame_idx += 1
+
         cap.release()
         pose.close()
+
+        # we will return out_frames; the caller (skeleton) will insert frame_size into the data dict
         return out_frames
 
 
     def skeleton(self, video: str, video_json: str) -> dict:
-        # using bounding boxes as guidance, extract the skeleton in the video
-        # load the json
+        """
+        Load JSON, run mediapipe on it, and attach pose_landmarks.
+        Also attaches top-level 'frame_size' = [width, height] to returned data dict.
+        """
         with open(video_json, "r") as f:
             data = json.load(f)
 
         frames = data.get('frames', [])
         augmented_frames = self.run_mediapipe(video, frames)
         data['frames'] = augmented_frames
+
+        # Try to get frame size from the video (useful for door point). If not available,
+        # attempt to infer from largest bbox in frames. Default to (0,0) if not found.
+        try:
+            cap = cv2.VideoCapture(video)
+            ret, frame = cap.read()
+            if ret:
+                h, w = frame.shape[:2]
+                data['frame_size'] = [int(w), int(h)]
+            cap.release()
+        except Exception:
+            data['frame_size'] = [0, 0]
+
+        # fallback: if frame_size still zero, try to infer from bbox extents
+        if data.get('frame_size', [0, 0]) == [0, 0]:
+            max_w = 0
+            max_h = 0
+            for f in frames:
+                bb = f.get('bbox')
+                if bb:
+                    max_w = max(max_w, bb[2])
+                    max_h = max(max_h, bb[3])
+            if max_w > 0 and max_h > 0:
+                data['frame_size'] = [int(max_w), int(max_h)]
+
         return data
     
-    def skeleton_angles(self, video_json: dict) -> dict:
-        data = dict(video_json) 
-
+    def skeleton_angles(self, video_json: dict, selected_landmarks=[0,11,12,23,24]) -> dict:
+        data = dict(video_json)
         for frame in data.get('frames', []):
             lm = frame.get('pose_landmarks')
             if lm is None:
                 frame['pose_angles'] = None
                 continue
-
             try:
-                arr = np.array(lm)[:, :3] # ignore visibility, take x,y,z
-                def safe_get(idx):
-                    return arr[idx] if idx < len(arr) else np.array([np.nan, np.nan, np.nan])
-                
-                # Shoulders
-                ls = safe_get(11) # left shoulder
-                rs = safe_get(12) # right shoulder
-                shoulder_vec = rs - ls
-                shoulder_angle = float(math.degrees(math.atan2(shoulder_vec[1], shoulder_vec[0])))
-
-                # Hips
-                lh = safe_get(23) # left hip
-                rh = safe_get(24) # right hip
-                hip_vec = rh - lh
-                hip_angle = float(math.degrees(math.atan2(hip_vec[1], hip_vec[0])))
-
-                # Feet (ankles)
-                la = safe_get(27) # left ankle
-                ra = safe_get(28) # right ankle
-                feet_vec = ra - la
-                feet_angle = float(math.degrees(math.atan2(feet_vec[1], feet_vec[0])))
-
-                # Head direction
-                nose = safe_get(0) # nose
-                shoulder_mid = (ls + rs) / 2
-                head_vec = shoulder_mid - nose
-                head_angle = float(math.degrees(math.atan2(head_vec[1], head_vec[0])))
-
-                frame['pose_angles'] = {
-                    'shoulder_angle': shoulder_angle,
-                    'hip_angle': hip_angle,
-                    'feet_angle': feet_angle,
-                    'head_angle': head_angle
-                }
-
-            except Exception as e:
+                arr = np.array(lm)[:, :3]  # x, y, z
+                h, w = frame['frame_height'], frame['frame_width']
+                door_point = np.array([w/2, h, 0])
+                angles = {}
+                for idx in selected_landmarks:
+                    joint = arr[idx] if idx < len(arr) else np.array([np.nan, np.nan, np.nan])
+                    vec = door_point - joint
+                    angle = float(np.degrees(np.arctan2(vec[1], vec[0])))
+                    angles[f"joint{idx}_to_door"] = angle
+                frame['pose_angles'] = angles
+            except Exception:
                 frame['pose_angles'] = None
-            
         return data
     
     def master_json(self, video_path: str, json_path: str, out_dir: str ='master_jsons/') -> str:
@@ -259,7 +287,8 @@ class DataProcessing:
             video_json_data: dict, 
             use_skeleton: bool = True, 
             use_angles: bool = True,
-            add_velocity: bool = True):
+            use_reduced_skeleton: bool = True
+            ):
         
         frames = video_json_data.get('frames', [])
         feats = []
@@ -271,40 +300,46 @@ class DataProcessing:
             basic = self.box_features(frame)
             frame_feats.extend(basic)
 
-            if add_velocity:
-                cx, cy = basic[0], basic[1]
-                if prev_center is not None:
-                    vx = cx - prev_center[0]
-                    vy = cy - prev_center[1]
-                else:
-                    vx, vy = 0.0, 0.0
-                frame_feats.extend([vx, vy])
-                prev_center = (cx, cy)
-
             if use_skeleton:
                 lm = frame.get('pose_landmarks')
                 if lm is not None:
                     coords = []
-                    for i in range(self.n_landmarks):
-                        if i < len(lm):
-                            coords.extend([float(lm[i][0]), float(lm[i][1]), float(lm[i][2])])
-                        else:
-                            coords.extend([0.0, 0.0, 0.0])
+                    if use_reduced_skeleton:
+                        # use the reduced list of landmark indexes
+                        for idx in self.REDUCED_LANDMARKS:
+                            if idx < len(lm):
+                                coords.extend([float(lm[idx][0]), float(lm[idx][1]), float(lm[idx][2])])
+                            else:
+                                coords.extend([0.0, 0.0, 0.0])
+                    else:
+                        # legacy: include up to self.n_landmarks
+                        for i in range(self.n_landmarks):
+                            if i < len(lm):
+                                coords.extend([float(lm[i][0]), float(lm[i][1]), float(lm[i][2])])
+                            else:
+                                coords.extend([0.0, 0.0, 0.0])
                     frame_feats.extend(coords)
                 else:
-                    frame_feats.extend([0.0] * (self.n_landmarks * 3))
+                    # pad with zeros for reduced skeleton length
+                    if use_reduced_skeleton:
+                        frame_feats.extend([0.0] * (len(self.REDUCED_LANDMARKS) * 3))
+                    else:
+                        frame_feats.extend([0.0] * (self.n_landmarks * 3))
             
             if use_angles:
                 ang = frame.get('pose_angles')
                 if ang:
+                    # we store six angles as described earlier
                     frame_feats.extend([
-                        float(ang.get('shoulder_angle', 0.0)),
-                        float(ang.get('hip_angle', 0.0)),
-                        float(ang.get('feet_angle', 0.0)),
-                        float(ang.get('head_angle', 0.0))
+                        float(ang.get('shoulder_left_angle', 0.0)) if ang.get('shoulder_left_angle') is not None else 0.0,
+                        float(ang.get('shoulder_right_angle', 0.0)) if ang.get('shoulder_right_angle') is not None else 0.0,
+                        float(ang.get('shoulder_door_angle', 0.0)) if ang.get('shoulder_door_angle') is not None else 0.0,
+                        float(ang.get('hip_left_angle', 0.0)) if ang.get('hip_left_angle') is not None else 0.0,
+                        float(ang.get('hip_right_angle', 0.0)) if ang.get('hip_right_angle') is not None else 0.0,
+                        float(ang.get('hip_door_angle', 0.0)) if ang.get('hip_door_angle') is not None else 0.0
                     ])
                 else:
-                    frame_feats.extend([0.0, 0.0, 0.0, 0.0])
+                    frame_feats.extend([0.0] * 6)
             feats.append(frame_feats)
         return np.array(feats, dtype=np.float32)
     
@@ -315,8 +350,9 @@ class DataProcessing:
             tail: float = 0.1,
             use_skeleton: bool = True,
             use_angles: bool = True,
-            add_velocity: bool = True
+            use_reduced_skeleton: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, dict, dict]:
+        
         master_json_path = self.master_json(video_path, json_path)
 
         with open(master_json_path, "r") as f:
@@ -332,8 +368,12 @@ class DataProcessing:
         past_data = {"frames": data["frames"][:new_total_frames]}
         future_data = {"frames": data["frames"][new_total_frames:]}
 
-        X = self.feature_extraction(past_data, use_skeleton, use_angles, add_velocity)
-        y = self.feature_extraction(future_data, use_skeleton, use_angles, add_velocity)
+        X = self.feature_extraction(past_data, use_skeleton=use_skeleton,
+                                    use_angles=use_angles,
+                                    use_reduced_skeleton=use_reduced_skeleton)
+        y = self.feature_extraction(future_data, use_skeleton=use_skeleton,
+                                    use_angles=use_angles,
+                                    use_reduced_skeleton=use_reduced_skeleton)
 
         return X, y, past_data, future_data
     
@@ -343,9 +383,10 @@ class DataProcessing:
             tail: float = 0.1,
             use_skeleton: bool = True,
             use_angles: bool = True,
-            add_velocity: bool = True,
+            use_reduces_skeleton: bool = True,
             skip_short: int = 6
     ) -> Dict[str, str]:
+        
         Xs, ys, labels, len_x, len_y = [], [], [], [], []
         for p in pairs:
             try:
@@ -355,7 +396,6 @@ class DataProcessing:
                     tail,
                     use_skeleton,
                     use_angles,
-                    add_velocity
                 )
                 if X.shape[0] < skip_short or y.shape[0] < 1:
                     continue
@@ -384,7 +424,7 @@ class DataProcessing:
             dtype = "float32"
     ):
         if len(sequences) == 0:
-            return np.zeros((0,0,0), dtype=dtype)
+            return np.zeros((0,0,0), dtype=dtype), np.array([], dtype=np.int32)
         
         max_t = max([s.shape[0] for s in sequences])
         feat = sequences[0].shape[1]
@@ -407,6 +447,27 @@ class DataProcessing:
     
     def transform_with_scaler(self, seqs: List[np.ndarray], scaler: StandardScaler) -> List[np.ndarray]:
         return [scaler.transform(s) for s in seqs]
+    
+    def build_features(self, frames, use_bbox=True, use_skeleton=True, use_angles=True, selected_landmarks=[0,11,12,23,24]):
+        """
+        Returns concatenated feature array for one video.
+        """
+        features = []
+        for f in frames:
+            frame_feats = []
+            if use_bbox:
+                bbox = f.get('bbox')
+                frame_feats.append(np.array(bbox).flatten() if bbox is not None else np.zeros(4))
+            if use_skeleton:
+                lm = f.get('pose_landmarks')
+                lm_sel = np.array(lm)[selected_landmarks,:3].flatten() if lm is not None else np.zeros(3*len(selected_landmarks))
+                frame_feats.append(lm_sel)
+            if use_angles:
+                ang = f.get('pose_angles')
+                ang_vals = np.array(list(ang.values())).flatten() if ang is not None else np.zeros(len(selected_landmarks))
+                frame_feats.append(ang_vals)
+            features.append(np.concatenate(frame_feats))
+        return np.array(features)  # shape: (T, F)
 
 dataprocessing = DataProcessing()
 datasetup = DataSetup()

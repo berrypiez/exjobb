@@ -29,6 +29,21 @@ def ade_fde(preds, targets):
 class Models:
     def __init__(self, feature_size: Optional[int] = None):
         self.feature_size = feature_size
+        
+    def _init_models(self):
+        self.lstm_model = None
+        self.cnn_model = None
+        self.lin_model = None
+        self.knn_model = None
+        
+        self.lin_Tf = None
+        self.lin_F = None
+        self.knn_Tf = None
+        self.knn_F = None
+        
+    def reset_models(self):
+        self._init_models()
+        print("All models reset.")
 
     # ----------------------------
     # LSTM Sequence-to-Sequence Model

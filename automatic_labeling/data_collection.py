@@ -236,6 +236,11 @@ class LiveTracker:
         for track_id in list(self.tracked_ids):
             
             if track_id not in current_ids:
+                self.recordings[track_id]["frames"].append({
+                    "frame_index": len(self.recordings[track_id]["frames"]),
+                    "center": None,
+                    "bbox": None
+                })
                 self.recordings[track_id]["vanish_frames"] += 1
                 
                 self.recordings[track_id]["writer"].write(clean_frame)
@@ -254,6 +259,11 @@ class LiveTracker:
 
     def finish_recording(self, track_id, clean_frame):
         rec = self.recordings[track_id]
+        total_frames = len(rec["frames"])
+        
+        if self.debug:
+            print(f"[INFO] Track ID {track_id} has {total_frames} frames recorded.")
+        
         rec["writer"].release()
         
         if len(rec["frames"]) < self.fps:
@@ -264,8 +274,18 @@ class LiveTracker:
             del self.recordings[track_id]
             return
         
-        last_center = rec["frames"][-1]["center"]
-        label = "enter" if self.is_inside_ellipse(*last_center) else "pass"
+        last_center = None
+        for f in reversed(rec["frames"]):
+            if f["center"] is not None:
+                last_center = f["center"]
+                break
+
+        # determine label based on last valid center
+        if last_center is not None:
+            label = "enter" if self.is_inside_ellipse(*last_center) else "pass"
+        else:
+            # fallback if all frames were empty
+            label = "pass"
         out_dir = self.ENTER_DIR if label == "enter" else self.PASS_DIR
         
         if self.debug:
@@ -285,6 +305,10 @@ class LiveTracker:
         with open(json_path, "w") as f:
             json.dump(json_data, f, indent=4)
         
+        if self.debug:
+            total_frames_video = len(rec["frames"])
+            print(f"[INFO] Final video frames: {total_frames_video}")
+        
         print(f"[SAVED] {final_video_path}")
         print(f"[SAVED] {json_path}")
 
@@ -302,7 +326,7 @@ class LiveTracker:
 def main():
     tracker = LiveTracker(
         yolo_model="yolo11s.pt",
-        ellipse_axes=(280, 140),
+        ellipse_axes=(480, 130),
         vanish_threshold=10,
         extra_seconds=0,
         camera_index=0,
@@ -310,7 +334,7 @@ def main():
         distort=False,
         fullscreen=False,
         debug=False,
-        test_rec=True
+        test_rec=False
     )
     tracker.run()
 

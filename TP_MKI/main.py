@@ -20,7 +20,7 @@ TAIL = 0.1
 TEST_SIZE = 0.2
 N_PLOT_SAMPLES = 3
 DOOR_THRESHOLD_X = 0.8  # example threshold for "open door" decision
-MODELS_TO_RUN = ["lstm", "cnn", "linear", "knn"]
+MODELS_TO_RUN = ["lstm", "cnn", "linear", "knn"] # 
 
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -108,7 +108,7 @@ def evaluate_decisions(y_true, y_pred):
 # ============================================
 results = {}
 models_obj = Models(feature_size=X_train.shape[2])
-
+models_obj.reset_models()
 for model_name in MODELS_TO_RUN:
     print(f"\n=== Training {model_name.upper()} ===")
 
@@ -121,18 +121,12 @@ for model_name in MODELS_TO_RUN:
         preds = models_obj.predict_cnn(X_test)
 
     elif model_name == "linear":
-        N, T, F = X_train.shape
-        model = LinearRegression()
-        model.fit(X_train.reshape(N*T, F), y_train.reshape(N*T, F))
-        preds = model.predict(X_test.reshape(X_test.shape[0]*X_test.shape[1], X_test.shape[2]))
-        preds = preds.reshape(X_test.shape[0], X_test.shape[1], X_test.shape[2])
+        model = models_obj.train_linear(X_train, y_train)
+        preds = models_obj.predict_linear(X_test)
 
     elif model_name == "knn":
-        N, T, F = X_train.shape
-        model = KNeighborsRegressor(n_neighbors=3)
-        model.fit(X_train.reshape(N*T, F), y_train.reshape(N*T, F))
-        preds = model.predict(X_test.reshape(X_test.shape[0]*X_test.shape[1], X_test.shape[2]))
-        preds = preds.reshape(X_test.shape[0], X_test.shape[1], X_test.shape[2])
+        model = models_obj.train_knn(X_train, y_train, n_neighbors=5)
+        preds = models_obj.predict_knn(X_test)
 
     else:
         continue
@@ -144,7 +138,7 @@ for model_name in MODELS_TO_RUN:
 
     # Save results
     np.save(os.path.join(RESULTS_DIR, f"preds_{model_name}.npy"), preds)
-    metrics = {"ADE": ade, "FDE": fde, "Accuracy": acc}
+    metrics = {"ADE": float(ade), "FDE": float(fde), "Accuracy": float(acc)}
     with open(os.path.join(RESULTS_DIR, f"metrics_{model_name}.json"), "w") as f:
         json.dump(metrics, f, indent=2)
 

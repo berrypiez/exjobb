@@ -1,7 +1,7 @@
 class Pathways:
     
     def home_videos(self):
-        videos = "C:/Users/hanna/Documents/Thesis/videos/"
+        videos = "/home/hanna/Documents/exjobb/videos/"
         return videos
     
     def home_videos_performance(self):

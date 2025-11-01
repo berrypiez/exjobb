@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 from models import Models, ade_fde
 from data_processing import load_master_json, build_dataset, train_test_split_dataset, pad_sequences, fit_scaler, transform_with_scaler
 from pathways import pathways
+import joblib
 
 
 # ===========================
 # CONFIGURATION
 # ===========================
-MASTER_JSON_PATH = os.path.join("master_jsons", "master_dataset.json")
+MASTER_JSON_PATH = "/home/hanna/Documents/exjobb/TP_MKI/master_jsons/master_dataset.json"
 RESULTS_DIR = "results"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(os.path.join(RESULTS_DIR, "plots"), exist_ok=True)
@@ -20,18 +21,16 @@ N_PLOT_SAMPLES = 3
 
 SCENARIOS_TO_RUN = [
     "bbox_only",
-    # "skeleton_only",
-    # "angles_only",
+    "skeleton_only",
+    "angles_only",
     "bbox_skeleton",
-    # "bbox_angles",
-    # "skeleton_angles",
+    "bbox_angles",
+    "skeleton_angles",
     "bbox_skeleton_angles"
 ]
 
 MODELS_TO_RUN = [
-    "knn", 
-    # "linear", 
-    # "cnn", 
+    "cnn", 
     "lstm"
 ]
 
@@ -101,12 +100,11 @@ def main():
     for SCENARIO in SCENARIOS_TO_RUN:
         print(f"\n=== Running scenario: {SCENARIO} ===")
         flags = scenario_flags(SCENARIO)
+        history = None
 
         # Build dataset
         X, y, labels = build_dataset(master_json, flags)
         print(f"Built dataset for {SCENARIO}: X, y={[len(X), len(y)]}, labels={len(labels)}")
-        print(f"{SCENARIO}: sample X shape (before padding) = {X[0].shape}")
-        print(f"{SCENARIO}: number of features per frame = {X[0].shape[1]}")
 
         # Scale
         scaler = fit_scaler(X)
@@ -121,6 +119,10 @@ def main():
         X_train, X_test, y_train, y_test = train_test_split_dataset(X_padded, y_padded, test_size=TEST_SIZE)
         print(f"Training samples: {len(X_train)}, Testing samples: {len(X_test)}")
 
+        scaler_path = os.path.join(RESULTS_DIR, f"{SCENARIO}_scaler.pkl")
+        joblib.dump(scaler, scaler_path)
+        print(f"Scaler saved to {scaler_path}")
+        
         # Initialize models
         models_obj = Models(feature_size=X_train.shape[2])
         models_obj.reset_models()
@@ -132,15 +134,19 @@ def main():
             if model_name == "lstm":
                 model, history = models_obj.train_lstm(X_train, y_train, verbose=1)
                 preds = models_obj.predict_lstm(X_test, y_len=y_test.shape[1])
+                model.save(os.path.join(RESULTS_DIR, f"{SCENARIO}_model_lstm.h5"))
             elif model_name == "cnn":
                 model, history = models_obj.train_cnn(X_train, y_train, verbose=1)
                 preds = models_obj.predict_cnn(X_test)
+                model.save(os.path.join(RESULTS_DIR, f"{SCENARIO}_model_cnn.h5"))
             elif model_name == "linear":
                 model = models_obj.train_linear(X_train, y_train)
                 preds = models_obj.predict_linear(X_test)
+                joblib.dump(model, os.path.join(RESULTS_DIR, f"{SCENARIO}_model_linear.pkl"))
             elif model_name == "knn":
                 model = models_obj.train_knn(X_train, y_train, n_neighbors=5)
                 preds = models_obj.predict_knn(X_test)
+                joblib.dump(model, os.path.join(RESULTS_DIR, f"{SCENARIO}_model_knn.pkl"))
             else:
                 continue
 

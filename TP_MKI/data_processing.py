@@ -76,7 +76,7 @@ def extract_features(video_data, use_bbox=True, use_skeleton=True,
                 frame_feats.extend([0.0] * len(REDUCED_LANDMARKS))
 
         features.append(frame_feats)
-
+    
     return np.array(features, dtype=np.float32)
 
 
@@ -145,6 +145,7 @@ def build_dataset(master_json, scenario_config, tail=0.1, use_reduced_skeleton=T
     Xs, ys, labels = [], [], []
 
     for video_name, video_data in master_json.items():
+
         feats = extract_features(
             video_data,
             use_bbox=scenario_config.get("use_bbox", True),
@@ -161,7 +162,6 @@ def build_dataset(master_json, scenario_config, tail=0.1, use_reduced_skeleton=T
         Xs.append(feats[:split_idx])
         ys.append(feats[split_idx:])
         labels.append(video_data.get("label", "unknown"))
-
     return Xs, ys, labels
 
 

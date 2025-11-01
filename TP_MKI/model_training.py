@@ -130,10 +130,10 @@ def main():
             print(f"\n=== Training {model_name.upper()} ({SCENARIO}) ===")
 
             if model_name == "lstm":
-                model, _ = models_obj.train_lstm(X_train, y_train, verbose=1)
+                model, history = models_obj.train_lstm(X_train, y_train, verbose=1)
                 preds = models_obj.predict_lstm(X_test, y_len=y_test.shape[1])
             elif model_name == "cnn":
-                model, _ = models_obj.train_cnn(X_train, y_train, verbose=1)
+                model, history = models_obj.train_cnn(X_train, y_train, verbose=1)
                 preds = models_obj.predict_cnn(X_test)
             elif model_name == "linear":
                 model = models_obj.train_linear(X_train, y_train)
@@ -150,11 +150,19 @@ def main():
 
             # Save predictions + metrics
             np.save(os.path.join(RESULTS_DIR, f"{SCENARIO}_preds_{model_name}.npy"), preds)
+            metrics_dict = {"ADE": float(ade), "FDE": float(fde), "Accuracy": float(acc)}
+
+            # Add loss history if available
+            if history is not None:
+                metrics_dict["loss"] = [float(l) for l in history.history["loss"]]
+                if "val_loss" in history.history:
+                    metrics_dict["val_loss"] = [float(l) for l in history.history["val_loss"]]
+            
             with open(os.path.join(RESULTS_DIR, f"{SCENARIO}_metrics_{model_name}.json"), "w") as f:
-                json.dump({"ADE": float(ade), "FDE": float(fde), "Accuracy": float(acc)}, f, indent=2)
+                json.dump(metrics_dict, f, indent=2)
 
             plot_trajectories(y_test, preds, model_name, SCENARIO)
-            results[model_name] = {"ADE": float(ade), "FDE": float(fde), "Accuracy": float(acc)}
+            results[model_name] = metrics_dict
 
         all_results[SCENARIO] = results
 
